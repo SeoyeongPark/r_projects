@@ -1,0 +1,123 @@
+---
+title: "Sentiment Analysis"
+author: "Seoyeong Park"
+date: '2020 01 04'
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+```
+
+
+## Developing sentiment analysis model in R
+
+### Summary
+This project is a sentiment analysis with the dataset of Jane Austen's books. I will use a 'bing' lexical analyzer to analyze sentiment score and visualize represented sentiment score with word cloud. 
+
+### Install tidytext package and other required packages.
+```{r}
+#install.packages("tidytext")
+#install.packages("tidyr")
+```
+
+### Reading the tidytext package and load the dataset of 'sentiments'.
+```{r}
+library(tidytext)
+sentiments
+```
+
+In this project, I will make use of the 'bing' lexicons to extract the sentiments from the data among three general purpose lexicons, which are AFINN, bing, laughran.
+
+```{r}
+get_sentiments("bing")
+```
+
+
+### Performing sentiment analysis with the inner join
+With importing libraries 'janeaustenr', 'stringr' as well as 'tidytext', 'janeaustenr' library will provide the textual data in the form of books written by the novelist Jane Austen. Tidytext will help perform efficient text analysis on data. 
+```{r}
+library(janeaustenr)
+library(stringr)
+
+tidy_data <- austen_books() %>%
+  group_by(book) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter[\\divxlc]",
+                                                 ignore_case=TRUE)))) %>%
+  ungroup() %>%
+  
+  #This line converts the text of books into a tidy format
+  unnest_tokens(word, text)
+```
+
+I have performed the tidy operation on texts so that each row contains a single word. Now, I will make use of the 'bing' lexicon to and implement filter() over the words. The book I will use here is 'Sense and Sesibility'. I will derive its words to implement out sentiment analysis model.
+```{r}
+positive_senti <- get_sentiments("bing") %>%
+  filter(sentiment == "positive")
+
+tidy_data %>%
+  filter(book == "Emma") %>%
+  semi_join(positive_senti) %>%
+  count(word, sort = TRUE)
+```
+
+Next, I will segregate the data into separate columns of positive and negative sentiments by using spread(). Then, use mutate() to calculate the total sentiment.
+```{r}
+library(tidyr)
+bing <- get_sentiments("bing")
+Emma_sentiment <- tidy_data %>%
+  inner_join(bing) %>%
+  count(book = "Emma", index=linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill=0) %>%
+  mutate(sentiment = positive - negative)
+```
+
+Visualize the words present in the book 'Emma' based on corresponding positive and negative scores.
+```{r}
+library(ggplot2)
+ggplot(Emma_sentiment, aes(index, sentiment, fill=book)) +
+  geom_bar(stat = "identity", show.legend = TRUE) + 
+  facet_wrap(~book, ncol = 2, scales = "free_x")
+```
+
+Count the most common positive and negative words that are present in the novel.
+```{r}
+counting_words <- tidy_data %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort=TRUE)
+head(counting_words)
+```
+
+Next, visualize sentiment score. I will plot the scores with the axis labeled with both positive and negative words. Use ggplot() to visualize the data. 
+```{r}
+counting_words %>%
+  filter(n>150) %>%
+  mutate(n=ifelse(sentiment=="negative", -n, n)) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) + 
+  geom_col() + 
+  coord_flip() + 
+  labs(y="Sentiment Score")
+```
+
+Finally, I will create a wordcloud that will delineate the most recurring positive and negative words. I will use comparison.cloud() to visualize both negative and positive words in a single wordcloud.
+```{r}
+library(reshape2)
+library(wordcloud)
+tidy_data %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort=TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("red", "blue"),
+                   max.words = 100)
+```
+
+Above word cloud shows visualization of words group based on negative and positive groups of data. 
+
